@@ -6,9 +6,11 @@ export async function POST(request: Request) {
   const token = parseCookieValue(cookieHeader, "dispatch_session");
 
   if (token) {
-    const db = getDatabase();
-    db.prepare("DELETE FROM sessions WHERE id = ?").run(token);
-    db.close();
+    const db = await getDatabase();
+    await db.execute({
+      sql: "DELETE FROM sessions WHERE id = ?",
+      args: [token],
+    });
   }
 
   const response = NextResponse.json({ success: true });

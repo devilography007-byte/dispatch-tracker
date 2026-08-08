@@ -19,12 +19,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const db = getDatabase();
-  const user = db
-    .prepare(
-      "SELECT id, username, password_hash, password_salt, role FROM users WHERE username = ?"
-    )
-    .get(username) as
+  const db = await getDatabase();
+  const result = await db.execute({
+    sql: "SELECT id, username, password_hash, password_salt, role FROM users WHERE username = ?",
+    args: [username],
+  });
+
+  const user = result.rows[0] as
     | {
         id: number;
         username: string;
@@ -35,7 +36,6 @@ export async function POST(request: Request) {
     | undefined;
 
   if (!user) {
-    db.close();
     return NextResponse.json(
       { error: "Invalid username or password." },
       { status: 401 }
@@ -44,11 +44,10 @@ export async function POST(request: Request) {
 
   const expectedHash = makePasswordHash(
     password,
-    user.password_salt
+    user.password_salt as string
   );
 
   if (expectedHash !== user.password_hash) {
-    db.close();
     return NextResponse.json(
       { error: "Invalid username or password." },
       { status: 401 }
@@ -60,16 +59,15 @@ export async function POST(request: Request) {
     Date.now() + 12 * 60 * 60 * 1000
   ).toISOString();
 
-  db.prepare(
-    `
+  await db.execute({
+    sql: `
       INSERT INTO sessions (id, username, expires_at)
       VALUES (?, ?, ?)
-    `
-  ).run(token, user.username, expiresAt);
+    `,
+    args: [token, user.username, expiresAt],
+  });
 
-  db.close();
-
-  addAuditLog(
+  await addAuditLog(
     user.username,
     normalizeRole(user.role),
     "login",

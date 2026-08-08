@@ -1,46 +1,15 @@
-import fs from "fs";
-import path from "path";
-import Database from "better-sqlite3";
-
-const DB_PATH = path.join(
-  process.cwd(),
-  "data",
-  "dispatch-tracker.db"
-);
-
-function getDatabase() {
-  const dir = path.dirname(DB_PATH);
-  fs.mkdirSync(dir, { recursive: true });
-
-  const db = new Database(DB_PATH);
-
-  db.pragma("journal_mode = WAL");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS app_state (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      projects TEXT NOT NULL DEFAULT '[]',
-      dispatches TEXT NOT NULL DEFAULT '[]'
-    );
-
-    INSERT OR IGNORE INTO app_state (id, projects, dispatches)
-    VALUES (1, '[]', '[]');
-  `);
-
-  return db;
-}
+import { getDatabase } from "@/lib/team-db";
 
 export async function GET() {
-  const db = getDatabase();
+  const db = await getDatabase();
 
-  const row = db
-    .prepare(
-      "SELECT projects, dispatches FROM app_state WHERE id = 1"
-    )
-    .get() as
+  const result = await db.execute(
+    "SELECT projects, dispatches FROM app_state WHERE id = 1"
+  );
+
+  const row = result.rows[0] as unknown as
     | { projects: string; dispatches: string }
     | undefined;
-
-  db.close();
 
   return Response.json({
     projects: row ? JSON.parse(row.projects) : [],
@@ -55,16 +24,12 @@ export async function POST(request: Request) {
     dispatches: Array.isArray(body?.dispatches) ? body.dispatches : [],
   };
 
-  const db = getDatabase();
+  const db = await getDatabase();
 
-  db.prepare(
-    "UPDATE app_state SET projects = ?, dispatches = ? WHERE id = 1"
-  ).run(
-    JSON.stringify(payload.projects),
-    JSON.stringify(payload.dispatches)
-  );
-
-  db.close();
+  await db.execute({
+    sql: "UPDATE app_state SET projects = ?, dispatches = ? WHERE id = 1",
+    args: [JSON.stringify(payload.projects), JSON.stringify(payload.dispatches)],
+  });
 
   return Response.json({ success: true, ...payload });
 }
