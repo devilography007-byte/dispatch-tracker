@@ -1,26 +1,107 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-alt: #f8fafc;
+  --surface-muted: #f1f5f9;
+  --border: #e2e8f0;
+  --muted: #64748b;
+  --muted-2: #94a3b8;
+  --input: #ffffff;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root[data-theme="dark"] {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --surface: #0f172a;
+  --surface-alt: #111827;
+  --surface-muted: #111827;
+  --border: #334155;
+  --muted: #94a3b8;
+  --muted-2: #64748b;
+  --input: #0f172a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
+  margin: 0;
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+body[data-theme="dark"] main {
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+}
+
+body[data-theme="dark"] .bg-white {
+  background-color: var(--surface) !important;
+}
+
+body[data-theme="dark"] .bg-slate-50 {
+  background-color: var(--surface-alt) !important;
+}
+
+body[data-theme="dark"] .bg-slate-100 {
+  background-color: var(--surface-muted) !important;
+}
+
+body[data-theme="dark"] .text-slate-500 {
+  color: var(--muted) !important;
+}
+
+body[data-theme="dark"] .text-slate-400 {
+  color: var(--muted-2) !important;
+}
+
+body[data-theme="dark"] .text-slate-900 {
+  color: var(--foreground) !important;
+}
+
+body[data-theme="dark"] .text-slate-700 {
+  color: #cbd5e1 !important;
+}
+
+body[data-theme="dark"] .border,
+body[data-theme="dark"] .border-b,
+body[data-theme="dark"] .border-t,
+body[data-theme="dark"] .divide-y > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border) !important;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: var(--input);
+  color: var(--foreground);
+  outline: none;
+}
+
+.input:focus {
+  border-color: #475569;
+  box-shadow: 0 0 0 2px #e2e8f0;
+}
+
+body[data-theme="dark"] .input {
+  background: var(--input);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+body[data-theme="dark"] .input:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+
+body[data-theme="dark"] .input::placeholder {
+  color: var(--muted);
 }
