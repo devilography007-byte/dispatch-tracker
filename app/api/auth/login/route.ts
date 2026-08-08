@@ -25,15 +25,15 @@ export async function POST(request: Request) {
     args: [username],
   });
 
-  const user = result.rows[0] as
-    | {
-        id: number;
-        username: string;
-        password_hash: string;
-        password_salt: string;
-        role: string;
-      }
-    | undefined;
+ const user = result.rows[0] as unknown as
+  | {
+      id: number;
+      username: string;
+      password_hash: string;
+      password_salt: string;
+      role: string;
+    }
+  | undefined;
 
   if (!user) {
     return NextResponse.json(
