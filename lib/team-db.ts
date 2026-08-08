@@ -55,7 +55,8 @@ async function ensureSchema(db: Client) {
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       password_salt TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'user'
+      role TEXT NOT NULL DEFAULT 'user',
+      approved INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -90,39 +91,34 @@ async function ensureSchema(db: Client) {
     INSERT OR IGNORE INTO app_state (id, projects, dispatches)
     VALUES (1, '[]', '[]')
   `);
-}
 
-async function ensureSeedUsers(db: Client) {
-  const defaultUsers = [
-    { username: "admin", password: "admin123", role: "admin" },
-    { username: "manager", password: "manager123", role: "manager" },
-    { username: "user", password: "user123", role: "user" },
-  ] as const;
+  // MIGRATION: if "approved" column didn't exist before (older databases),
+  // add it, then grandfather in the earliest account as an approved admin
+  // so the site owner never gets locked out.
+  const info = await db.execute("PRAGMA table_info(users)");
+  const hasApproved = info.rows.some(
+    (row: any) => row.name === "approved"
+  );
 
-  for (const user of defaultUsers) {
-    const salt = generateSalt();
-    const hash = makePasswordHash(user.password, salt);
-
-    await db.execute({
-      sql: `
-        INSERT OR IGNORE INTO users (username, password_hash, password_salt, role)
-        VALUES (?, ?, ?, ?)
-      `,
-      args: [user.username, hash, salt, user.role],
-    });
+  if (!hasApproved) {
+    await db.execute(
+      "ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 0"
+    );
   }
+
+  await db.execute(`
+    UPDATE users
+    SET approved = 1, role = 'admin'
+    WHERE id = (SELECT MIN(id) FROM users)
+      AND approved = 0
+  `);
 }
 
-// Ensures schema + seed users run only ONCE per warm serverless instance,
-// instead of on every single request.
 export async function getDatabase(): Promise<Client> {
   const db = getClient();
 
   if (!schemaReady) {
-    schemaReady = (async () => {
-      await ensureSchema(db);
-      await ensureSeedUsers(db);
-    })();
+    schemaReady = ensureSchema(db);
   }
 
   await schemaReady;
@@ -182,27 +178,27 @@ export async function getSessionUser(request: Request) {
 export async function getUserList() {
   const db = await getDatabase();
   const result = await db.execute(
-    "SELECT id, username, role FROM users ORDER BY username ASC"
+    "SELECT id, username, role, approved FROM users ORDER BY username ASC"
   );
 
   return result.rows.map((row: any) => ({
     id: row.id as number,
     username: row.username as string,
     role: normalizeRole(row.role as string),
+    approved: Number(row.approved) === 1,
   }));
 }
 
-export async function createUserRecord(
-  username: string,
-  password: string,
-  role: AppRole
-) {
+// Public signup. Role and approval are decided internally:
+// - The very first account ever created becomes an approved admin.
+// - Every account after that is created as an UNAPPROVED "user"
+//   and needs an admin to approve it before they can log in.
+export async function createUserRecord(username: string, password: string) {
   const cleanUsername = username.trim();
   if (!cleanUsername || !password) {
     throw new Error("Username and password are required.");
   }
 
-  const nextRole = normalizeRole(role);
   const db = await getDatabase();
 
   const existing = await db.execute({
@@ -214,22 +210,59 @@ export async function createUserRecord(
     throw new Error("That username already exists.");
   }
 
+  const countResult = await db.execute("SELECT COUNT(*) as count FROM users");
+  const userCount = Number((countResult.rows[0] as any).count);
+  const isFirstUser = userCount === 0;
+
+  const role: AppRole = isFirstUser ? "admin" : "user";
+  const approved = isFirstUser ? 1 : 0;
+
   const salt = generateSalt();
   const hash = makePasswordHash(password, salt);
 
   const result = await db.execute({
     sql: `
-      INSERT INTO users (username, password_hash, password_salt, role)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO users (username, password_hash, password_salt, role, approved)
+      VALUES (?, ?, ?, ?, ?)
     `,
-    args: [cleanUsername, hash, salt, nextRole],
+    args: [cleanUsername, hash, salt, role, approved],
   });
 
   return {
     id: Number(result.lastInsertRowid),
     username: cleanUsername,
-    role: nextRole,
+    role,
+    approved: approved === 1,
   };
+}
+
+export async function getPendingUsers() {
+  const db = await getDatabase();
+  const result = await db.execute(
+    "SELECT id, username, role FROM users WHERE approved = 0 ORDER BY id ASC"
+  );
+
+  return result.rows.map((row: any) => ({
+    id: row.id as number,
+    username: row.username as string,
+    role: normalizeRole(row.role as string),
+  }));
+}
+
+export async function approveUserById(userId: number) {
+  const db = await getDatabase();
+  await db.execute({
+    sql: "UPDATE users SET approved = 1 WHERE id = ?",
+    args: [userId],
+  });
+}
+
+export async function rejectUserById(userId: number) {
+  const db = await getDatabase();
+  await db.execute({
+    sql: "DELETE FROM users WHERE id = ? AND approved = 0",
+    args: [userId],
+  });
 }
 
 export async function addAuditLog(

@@ -21,19 +21,20 @@ export async function POST(request: Request) {
 
   const db = await getDatabase();
   const result = await db.execute({
-    sql: "SELECT id, username, password_hash, password_salt, role FROM users WHERE username = ?",
+    sql: "SELECT id, username, password_hash, password_salt, role, approved FROM users WHERE username = ?",
     args: [username],
   });
 
- const user = result.rows[0] as unknown as
-  | {
-      id: number;
-      username: string;
-      password_hash: string;
-      password_salt: string;
-      role: string;
-    }
-  | undefined;
+  const user = result.rows[0] as unknown as
+    | {
+        id: number;
+        username: string;
+        password_hash: string;
+        password_salt: string;
+        role: string;
+        approved: number;
+      }
+    | undefined;
 
   if (!user) {
     return NextResponse.json(
@@ -51,6 +52,16 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Invalid username or password." },
       { status: 401 }
+    );
+  }
+
+  if (Number(user.approved) !== 1) {
+    return NextResponse.json(
+      {
+        error:
+          "Your account is pending admin approval. Please check back later.",
+      },
+      { status: 403 }
     );
   }
 

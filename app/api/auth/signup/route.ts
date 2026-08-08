@@ -21,21 +21,38 @@ export async function POST(request: Request) {
 
   if (password.length < 8) {
     return NextResponse.json(
-      { error: "Password must be at least 6 characters." },
+      { error: "Password must be at least 8 characters." },
       { status: 400 }
     );
   }
 
   let newUser;
   try {
-    // New accounts default to the "user" role — not admin/manager.
-    newUser = await createUserRecord(username, password, "user");
+    newUser = await createUserRecord(username, password);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Could not create account.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  await addAuditLog(
+    newUser.username,
+    normalizeRole(newUser.role),
+    newUser.approved ? "signup" : "signup_pending",
+    { username: newUser.username }
+  );
+
+  // Not approved yet — do NOT log them in. They need to wait for an admin.
+  if (!newUser.approved) {
+    return NextResponse.json({
+      success: true,
+      pending: true,
+      message:
+        "Account created. An admin needs to approve your access before you can sign in.",
+    });
+  }
+
+  // Only true for the very first account ever created (auto-admin).
   const token = `dispatch_${randomSessionToken()}`;
   const expiresAt = new Date(
     Date.now() + 12 * 60 * 60 * 1000
@@ -50,12 +67,9 @@ export async function POST(request: Request) {
     args: [token, newUser.username, expiresAt],
   });
 
-  await addAuditLog(newUser.username, normalizeRole(newUser.role), "signup", {
-    username: newUser.username,
-  });
-
   const response = NextResponse.json({
     success: true,
+    pending: false,
     user: newUser.username,
     role: newUser.role,
   });
